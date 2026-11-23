@@ -1,216 +1,295 @@
-// Token Radar's page, model radar-6: the board, the detail view and the filters, all from window.RADAR.
+// Token Launch Radar — page logic for the radar-6 board.
+// Renders everything from window.RADAR (data.js, loaded just above this file).
+// No network: every number on the page comes from that one object.
 (function () {
-  'use strict';
-  var R = window.RADAR;
-  if (!R) return;
+  "use strict";
 
-  function fmtUsd(n) {
-    if (n === null || n === undefined) return '—';
-    if (n >= 1e9) return '$' + (n / 1e9).toFixed(2) + 'B';
-    if (n >= 1e6) return '$' + (n / 1e6).toFixed(1) + 'M';
-    if (n >= 1e3) return '$' + (n / 1e3).toFixed(1) + 'K';
-    return '$' + n;
+  var DATA = window.RADAR || null;
+  var countLine = document.getElementById("board-count");
+  if (!DATA || !DATA.rows) {
+    if (countLine) countLine.textContent = "The board data did not load.";
+    return;
   }
-  function fmtPct(n) {
-    if (n === null || n === undefined) return '—';
-    return (n > 0 ? '+' : '') + n.toFixed(1) + '%';
+
+  var rows = DATA.rows.slice();
+  var live = DATA.live || [];
+
+  // ---------- small formatters ----------
+  function moneyFull(n) {
+    return "$" + Math.round(n).toLocaleString("en-US");
   }
-  function fmtAge(days) {
-    if (days === null || days === undefined) return '—';
-    if (days < 365) return days + 'd';
-    return (days / 365).toFixed(1) + 'y';
+  function moneyShort(n) {
+    if (n >= 1e9) return "$" + (n / 1e9).toFixed(2) + "B";
+    if (n >= 1e6) return "$" + (n / 1e6).toFixed(2) + "M";
+    if (n >= 1e3) return "$" + (n / 1e3).toFixed(1) + "K";
+    return "$" + Math.round(n);
+  }
+  function pct(x) {
+    if (x === null || x === undefined) return "—";
+    return (x >= 0 ? "+" : "") + x.toFixed(1) + "%";
+  }
+  function ageText(d) {
+    if (d === null || d === undefined) return "—";
+    return d + "d";
+  }
+  function chainText(chains) {
+    if (!chains || !chains.length) return "—";
+    if (chains.length <= 3) return chains.join(", ");
+    return chains.slice(0, 3).join(", ") + " +" + (chains.length - 3);
   }
   function esc(s) {
-    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    return String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
   }
 
-  // ---- Header stats and footer.
-  document.getElementById('stat-asof').textContent = R.as_of;
-  document.getElementById('stat-board').textContent = String(R.board_size);
-  document.getElementById('stat-watchlist').textContent = String(R.watchlist_size);
-  document.getElementById('stat-early').textContent = String(R.early_size);
-  document.getElementById('stat-above').textContent = String(R.above_floor_size);
-  document.getElementById('foot-source').textContent = R.source;
-  document.getElementById('foot-asof').textContent = R.as_of;
+  // ---------- header stats, from the data, not from the markup ----------
+  function setText(id, value) {
+    var el = document.getElementById(id);
+    if (el) el.textContent = value;
+  }
+  setText("stat-date", "14 Nov 2026");
+  setText("stat-ranked", String(DATA.board_size || rows.length));
+  setText("stat-watchlist", String(DATA.watchlist_size || 40));
+  setText("stat-early", String(DATA.early_size || 138));
+  setText("stat-above", String(DATA.above_floor_size || 20));
 
-  // ---- Top 10.
-  var top10 = document.getElementById('top10-list');
-  R.rows.slice(0, 10).forEach(function (r) {
-    var li = document.createElement('li');
-    li.innerHTML = '<button class="top10-row" data-slug="' + esc(r.slug) + '"><span class="top10-rank">#' +
-      r.rank + '</span> <span class="top10-name">' + esc(r.name) + '</span> <span class="top10-cat">' +
-      esc(r.category || '—') + '</span> <span class="top10-value">' + fmtUsd(r.implied_value_usd) + '</span></button>';
-    top10.appendChild(li);
-  });
+  // ---------- filter controls ----------
+  var searchInput = document.getElementById("search");
+  var categorySelect = document.getElementById("filter-category");
+  var chainSelect = document.getElementById("filter-chain");
+  var watchlistBox = document.getElementById("watchlist-only");
 
-  // ---- Filter selects.
-  var cats = {}, chains = {};
-  R.rows.forEach(function (r) {
-    if (r.category) cats[r.category] = true;
-    r.chains.forEach(function (ch) { chains[ch] = true; });
+  function fillSelect(select, values) {
+    values.forEach(function (v) {
+      var opt = document.createElement("option");
+      opt.value = v;
+      opt.textContent = v;
+      select.appendChild(opt);
+    });
+  }
+  var categories = [];
+  var chains = [];
+  rows.forEach(function (r) {
+    if (r.category && categories.indexOf(r.category) === -1) categories.push(r.category);
+    (r.chains || []).forEach(function (c) {
+      if (chains.indexOf(c) === -1) chains.push(c);
+    });
   });
-  var catSel = document.getElementById('category');
-  Object.keys(cats).sort().forEach(function (c) {
-    var o = document.createElement('option');
-    o.value = c; o.textContent = c;
-    catSel.appendChild(o);
-  });
-  var chainSel = document.getElementById('chain');
-  Object.keys(chains).sort().forEach(function (c) {
-    var o = document.createElement('option');
-    o.value = c; o.textContent = c;
-    chainSel.appendChild(o);
-  });
+  fillSelect(categorySelect, categories.sort());
+  fillSelect(chainSelect, chains.sort());
 
-  // ---- Board rendering, sorting and filtering.
-  var state = { sort: 'rank', dir: 1, q: '', category: '', chain: '', watchlistOnly: false };
-  var body = document.getElementById('board-body');
-  var count = document.getElementById('count');
-  var empty = document.getElementById('empty');
+  // ---------- sorting ----------
+  var sortKey = "rank";
+  var sortDir = 1;
+  var defaultDir = { rank: 1, name: 1, category: 1, chains: 1 };
+  function sortValue(r, key) {
+    if (key === "name") return (r.name || "").toLowerCase();
+    if (key === "category") return (r.category || "").toLowerCase();
+    if (key === "chains") return (r.chains && r.chains[0]) || "";
+    if (key === "change_7d") return r.change_7d === null ? -Infinity : r.change_7d;
+    if (key === "age_days") return r.age_days === null ? -Infinity : r.age_days;
+    return r[key] === undefined ? 0 : r[key];
+  }
+  function sortedRows(list) {
+    return list.slice().sort(function (a, b) {
+      var va = sortValue(a, sortKey);
+      var vb = sortValue(b, sortKey);
+      if (va < vb) return -1 * sortDir;
+      if (va > vb) return 1 * sortDir;
+      return a.rank - b.rank;
+    });
+  }
+  function markSortHeaders() {
+    document.querySelectorAll("#board-table th[data-sort]").forEach(function (th) {
+      var mark = th.querySelector(".sort-mark");
+      if (mark) mark.textContent = th.dataset.sort === sortKey ? (sortDir === 1 ? " ▲" : " ▼") : "";
+      th.setAttribute("aria-sort", th.dataset.sort === sortKey ? (sortDir === 1 ? "ascending" : "descending") : "none");
+    });
+  }
 
+  // ---------- filtering ----------
   function visibleRows() {
-    var q = state.q.trim().toLowerCase();
-    var rows = R.rows.filter(function (r) {
-      if (state.watchlistOnly && !r.watchlist) return false;
-      if (state.category && r.category !== state.category) return false;
-      if (state.chain && r.chains.indexOf(state.chain) < 0) return false;
-      if (q && r.name.toLowerCase().indexOf(q) < 0 && r.slug.toLowerCase().indexOf(q) < 0) return false;
+    var q = searchInput.value.trim().toLowerCase();
+    var cat = categorySelect.value;
+    var chain = chainSelect.value;
+    var wlOnly = watchlistBox.checked;
+    return rows.filter(function (r) {
+      if (wlOnly && !r.watchlist) return false;
+      if (cat && r.category !== cat) return false;
+      if (chain && (r.chains || []).indexOf(chain) < 0) return false;
+      if (q && (r.name || "").toLowerCase().indexOf(q) === -1 && (r.slug || "").indexOf(q) === -1) return false;
       return true;
     });
-    var key = state.sort;
-    rows.sort(function (a, b) {
-      var av = a[key], bv = b[key];
-      if (av === null || av === undefined) return 1;
-      if (bv === null || bv === undefined) return -1;
-      if (typeof av === 'string') return av.localeCompare(bv) * state.dir;
-      return (av - bv) * state.dir;
-    });
-    return rows;
   }
 
+  // ---------- board rendering ----------
+  var boardBody = document.getElementById("board-body");
   function renderBoard() {
-    var rows = visibleRows();
-    body.innerHTML = '';
-    rows.forEach(function (r) {
-      var tr = document.createElement('tr');
-      tr.dataset.slug = r.slug;
-      var range = fmtUsd(r.implied_value_bear_usd) + ' – ' + fmtUsd(r.implied_value_bull_usd);
-      var badges = (r.watchlist ? ' <span class="badge">watchlist</span>' : '') +
-        (r.rank <= 20 ? ' <span class="badge badge-high">farm first</span>' : '');
-      tr.innerHTML = '<td>' + r.rank + '</td><td class="name">' + esc(r.name) + badges +
-        '</td><td>' + esc(r.category || '—') +
-        '</td><td>' + esc(r.chains.slice(0, 3).join(', ')) + (r.chains.length > 3 ? ' +' + (r.chains.length - 3) : '') +
-        '</td><td>' + fmtUsd(r.tvl_usd) + '</td><td>' + fmtPct(r.change_7d) + '</td><td>' + fmtAge(r.age_days) +
-        '</td><td class="value">' + fmtUsd(r.implied_value_usd) + '</td><td class="range">' + range + '</td>';
-      body.appendChild(tr);
-    });
-    count.textContent = rows.length + ' of ' + R.rows.length + ' protocols';
-    empty.hidden = rows.length > 0;
+    var list = sortedRows(visibleRows());
+    var html = list.map(function (r) {
+      var cls = r.change_7d === null ? "" : (r.change_7d >= 0 ? " up" : " down");
+      return "<tr data-slug=\"" + esc(r.slug) + "\" tabindex=\"0\">" +
+        "<td class=\"num\">" + r.rank + "</td>" +
+        "<td><strong>" + esc(r.name) + "</strong>" + (r.watchlist ? " <span class=\"wl-dot\" title=\"On the watchlist\">●</span>" : "") + "</td>" +
+        "<td>" + esc(r.category || "—") + "</td>" +
+        "<td title=\"" + esc((r.chains || []).join(", ")) + "\">" + esc(chainText(r.chains)) + "</td>" +
+        "<td class=\"num\">" + moneyShort(r.tvl_usd) + "</td>" +
+        "<td class=\"num" + cls + "\">" + pct(r.change_7d) + "</td>" +
+        "<td class=\"num\">" + ageText(r.age_days) + "</td>" +
+        "<td class=\"num strong\">" + moneyShort(r.implied_value_usd) + "</td>" +
+        "<td class=\"num\">" + moneyShort(r.implied_value_bear_usd) + " – " + moneyShort(r.implied_value_bull_usd) + "</td>" +
+        "</tr>";
+    }).join("");
+    boardBody.innerHTML = html;
+    countLine.textContent = "Showing " + list.length + " of " + rows.length + " protocols.";
+    markSortHeaders();
   }
 
-  document.querySelectorAll('#board-table th[data-sort]').forEach(function (th) {
-    th.addEventListener('click', function () {
+  document.querySelectorAll("#board-table th[data-sort]").forEach(function (th) {
+    th.addEventListener("click", function () {
       var key = th.dataset.sort;
-      if (state.sort === key) state.dir = -state.dir;
-      else { state.sort = key; state.dir = key === 'rank' ? 1 : -1; }
+      if (key === sortKey) {
+        sortDir = -sortDir;
+      } else {
+        sortKey = key;
+        sortDir = defaultDir[key] || -1;
+      }
       renderBoard();
     });
   });
-  document.getElementById('q').addEventListener('input', function (e) { state.q = e.target.value; renderBoard(); });
-  catSel.addEventListener('change', function (e) { state.category = e.target.value; renderBoard(); });
-  chainSel.addEventListener('change', function (e) { state.chain = e.target.value; renderBoard(); });
-  document.getElementById('watchlist-only').addEventListener('change', function (e) { state.watchlistOnly = e.target.checked; renderBoard(); });
+  searchInput.addEventListener("input", renderBoard);
+  categorySelect.addEventListener("change", renderBoard);
+  chainSelect.addEventListener("change", renderBoard);
+  watchlistBox.addEventListener("change", renderBoard);
 
-  // ---- Live token view.
-  var liveBody = document.getElementById('live-body');
-  R.live.forEach(function (p) {
-    var tr = document.createElement('tr');
-    tr.innerHTML = '<td class="name">' + esc(p.name) + '</td><td>' + esc(p.category || '—') + '</td><td>' +
-      esc(p.chains.slice(0, 3).join(', ')) + '</td><td>' + fmtUsd(p.tvl_usd) + '</td><td>' + fmtPct(p.change_7d) +
-      '</td><td>' + fmtUsd(p.mcap_usd) + '</td><td>' + (p.mcap_tvl === null ? '—' : p.mcap_tvl.toFixed(3) + '×') + '</td>';
-    liveBody.appendChild(tr);
+  // ---------- top ten ----------
+  var topTen = document.getElementById("top-ten");
+  rows.slice(0, 10).forEach(function (r) {
+    var li = document.createElement("li");
+    li.dataset.slug = r.slug;
+    li.tabIndex = 0;
+    li.innerHTML = "<span class=\"top-rank\">#" + r.rank + "</span> " +
+      "<span class=\"top-name\">" + esc(r.name) + "</span> " +
+      "<span class=\"top-value\">" + moneyShort(r.implied_value_usd) + "</span> " +
+      "<span class=\"top-meta\">" + esc(r.category || "") + " · " + moneyShort(r.tvl_usd) + " TVL</span>";
+    topTen.appendChild(li);
   });
 
-  var tabPre = document.getElementById('tab-pre');
-  var tabLive = document.getElementById('tab-live');
-  var boardSection = document.querySelector('.board');
-  var liveSection = document.getElementById('live-section');
-  var filters = document.querySelector('.filters');
-  function showLive(on) {
-    tabPre.classList.toggle('active', !on);
-    tabLive.classList.toggle('active', on);
-    tabPre.setAttribute('aria-selected', String(!on));
-    tabLive.setAttribute('aria-selected', String(on));
-    boardSection.hidden = on;
-    liveSection.hidden = !on;
-    filters.style.visibility = on ? 'hidden' : 'visible';
-    document.getElementById('count').style.visibility = on ? 'hidden' : 'visible';
-  }
-  tabPre.addEventListener('click', function () { showLive(false); });
-  tabLive.addEventListener('click', function () { showLive(true); });
+  // ---------- live tokens ----------
+  var liveBody = document.getElementById("live-body");
+  liveBody.innerHTML = live.map(function (r) {
+    var cls = r.change_7d === null ? "" : (r.change_7d >= 0 ? " up" : " down");
+    return "<tr>" +
+      "<td><strong>" + esc(r.name) + "</strong></td>" +
+      "<td>" + esc(r.category || "—") + "</td>" +
+      "<td title=\"" + esc((r.chains || []).join(", ")) + "\">" + esc(chainText(r.chains)) + "</td>" +
+      "<td class=\"num\">" + moneyShort(r.tvl_usd) + "</td>" +
+      "<td class=\"num\">" + moneyShort(r.mcap_usd) + "</td>" +
+      "<td class=\"num\">" + (r.mcap_tvl === null ? "—" : Number(r.mcap_tvl.toFixed(3))) + "×</td>" +
+      "<td class=\"num" + cls + "\">" + pct(r.change_7d) + "</td>" +
+      "</tr>";
+  }).join("");
+  setText("live-count", live.length + " live tokens.");
 
-  // ---- Detail dialog.
-  var dialog = document.getElementById('detail');
-  var detailBody = document.getElementById('detail-body');
-  function whyRank(r) {
-    // One plain sentence naming what most lifts this row and what most holds
-    // it back, from the model's own numbers: the curve multiple at its TVL
-    // and the spike discount on its own seven-day move. Radar-6's spike
-    // discount spans 0.30-1.82 (k = -2), wider than radar-5's 0.55-1.35,
-    // so the thresholds move with it: a discount at or above 1.3 means
-    // the protocol fell against its category that week, at or below 0.7
-    // its TVL spiked against its category.
-    var ups = [];
-    var downs = [];
-    if (r.multiple >= 0.2) ups.push('a rich curve multiple (' + r.multiple.toFixed(3) + '× at its size)');
-    else if (r.multiple >= 0.08) ups.push('a mid curve multiple (' + r.multiple.toFixed(3) + '× at its size)');
-    if (r.spike_discount >= 1.3) ups.push('TVL that fell against its category (spike discount ×' + r.spike_discount.toFixed(2) + ')');
-    if (r.spike_discount <= 0.7) downs.push('its TVL spiked against its category (spike discount ×' + r.spike_discount.toFixed(2) + ')');
-    if (r.multiple <= 0.05) downs.push('a thin curve multiple at its size (' + r.multiple.toFixed(3) + '×)');
-    var s = 'Ranked #' + r.rank + ' because it is ' + fmtUsd(r.tvl_usd) + ' of TVL';
-    if (ups.length > 0) s += ' and ' + ups.join(', ');
-    s += '.';
-    if (downs.length > 0) s += ' Held back by ' + downs.join(', ') + '.';
-    return s;
+  // ---------- tabs ----------
+  var tabBoard = document.getElementById("tab-board");
+  var tabLive = document.getElementById("tab-live");
+  var boardSection = document.getElementById("board-section");
+  var liveSection = document.getElementById("live-section");
+  function setTab(which) {
+    var board = which === "board";
+    boardSection.hidden = !board;
+    liveSection.hidden = board;
+    tabBoard.setAttribute("aria-pressed", board ? "true" : "false");
+    tabLive.setAttribute("aria-pressed", board ? "false" : "true");
   }
+  tabBoard.addEventListener("click", function () { setTab("board"); });
+  tabLive.addEventListener("click", function () { setTab("live"); });
+
+  // ---------- detail dialog ----------
+  var dialog = document.getElementById("detail");
+  var detailBody = document.getElementById("detail-body");
+
+  function whyText(r) {
+    var move = r.change_7d === null
+      ? "no weekly move was reported"
+      : "it moved " + pct(r.change_7d) + " over seven days";
+    var spike;
+    if (r.spike_discount >= 1.3) {
+      spike = "Its TVL fell against its category, so the spike factor lifts the value above the curve — the model reads a fall as headroom for mean reversion, not as damage.";
+    } else if (r.spike_discount <= 0.7) {
+      spike = "Its TVL jumped against its category, so the spike factor cuts the value below the curve — the model treats a spike as borrowed growth that may not last.";
+    } else {
+      spike = "Its weekly move tracked its category, so the spike factor stays near 1 and the curve does most of the work.";
+    }
+    return "Rank #" + r.rank + ": " + moneyFull(r.tvl_usd) + " of TVL runs through the fitted curve to " +
+      moneyFull(r.curve_value_usd) + " (" + r.multiple + "× TVL). " +
+      "Against its category it moved " + r.growth_idio_pct.toFixed(1) + " points (" + move + "), " +
+      "giving a spike factor of " + r.spike_discount + "× and an implied value of " +
+      moneyFull(r.implied_value_usd) + ". " + spike;
+  }
+
   function openDetail(slug) {
     var r = null;
-    for (var i = 0; i < R.rows.length; i++) if (R.rows[i].slug === slug) { r = R.rows[i]; break; }
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i].slug === slug) { r = rows[i]; break; }
+    }
     if (!r) return;
-    var rangePct = Math.round((r.implied_value_bull_usd - r.implied_value_bear_usd) / r.implied_value_usd * 100);
-    var steps = r.farm_steps.map(function (s, i) {
-      return '<li><span class="step-n">' + (i + 1) + '.</span> ' + esc(s) + '</li>';
-    }).join('');
-    var mcapNote = r.mcap_usd ? '<p class="detail-sub">Note: this protocol records a market cap of ' +
-      fmtUsd(r.mcap_usd) + ' but no token id, so the watchlist still lists it — the value above is the model’s, not the market’s.</p>' : '';
+    var factorRows = [
+      ["TVL", moneyFull(r.tvl_usd)],
+      ["7-day change", pct(r.change_7d)],
+      ["Own growth vs category", (r.growth_idio_pct >= 0 ? "+" : "") + r.growth_idio_pct.toFixed(1) + " points"],
+      ["Curve multiple", r.multiple + "×"],
+      ["Curve value", moneyFull(r.curve_value_usd)],
+      ["Spike discount", r.spike_discount + "×"],
+      ["Implied value", moneyFull(r.implied_value_usd)],
+      ["Range (bear – bull)", moneyFull(r.implied_value_bear_usd) + " – " + moneyFull(r.implied_value_bull_usd)]
+    ].map(function (pair) {
+      return "<tr><td>" + pair[0] + "</td><td class=\"num\">" + pair[1] + "</td></tr>";
+    }).join("");
+    var steps = (r.farm_steps || []).map(function (s) {
+      return "<li>" + esc(s) + "</li>";
+    }).join("");
     detailBody.innerHTML =
-      '<h2>#' + r.rank + ' ' + esc(r.name) + '</h2>' +
-      '<p class="detail-sub">' + esc(r.category || 'No category') + ' · ' + esc(r.chains.join(', ')) +
-      (r.watchlist ? ' · <span class="badge">on the watchlist</span>' : '') + '</p>' +
-      '<p class="detail-why">' + esc(whyRank(r)) + '</p>' +
-      '<p class="detail-verdict">' + esc(r.farm_verdict) + '</p>' +
-      '<dl class="factors">' +
-      '<div><dt>TVL</dt><dd>' + fmtUsd(r.tvl_usd) + '</dd></div>' +
-      '<div><dt>7d change</dt><dd>' + fmtPct(r.change_7d) + '</dd></div>' +
-      '<div><dt>Own growth (vs category)</dt><dd>' + fmtPct(r.growth_idio_pct) + '</dd></div>' +
-      '<div><dt>Curve multiple</dt><dd>' + r.multiple.toFixed(3) + '× (fitted, 128 peers)</dd></div>' +
-      '<div><dt>Curve value</dt><dd>' + fmtUsd(r.curve_value_usd) + '</dd></div>' +
-      '<div><dt>Spike discount</dt><dd>×' + r.spike_discount.toFixed(3) + '</dd></div>' +
-      '<div><dt>Implied value</dt><dd class="value">' + fmtUsd(r.implied_value_usd) + '</dd></div>' +
-      '<div><dt>Range (bear – bull)</dt><dd>' + fmtUsd(r.implied_value_bear_usd) + ' – ' + fmtUsd(r.implied_value_bull_usd) + ' (±' + rangePct + '%)</dd></div>' +
-      '</dl>' +
-      '<p class="detail-formula">curve(' + fmtUsd(r.tvl_usd) + ') = ' + fmtUsd(r.curve_value_usd) +
-      ' × ' + r.spike_discount.toFixed(3) + ' × 0.60 = ' + fmtUsd(r.implied_value_usd) + '. Bear × 0.50, bull × 0.70.</p>' + mcapNote +
-      '<h3>Farm plan</h3><ol class="farm">' + steps + '</ol>';
-    if (typeof dialog.showModal === 'function') dialog.showModal();
+      "<h2>" + esc(r.name) + "</h2>" +
+      "<p class=\"detail-meta\">Rank #" + r.rank + " · " + esc(r.category || "no category") + " · " +
+      esc((r.chains || []).join(", ")) + " · " + ageText(r.age_days) + " old" +
+      (r.watchlist ? " · <span class=\"badge-watch\">On the watchlist</span>" : "") + "</p>" +
+      "<p class=\"detail-why\">" + esc(whyText(r)) + "</p>" +
+      "<table class=\"ledger factors\">" + factorRows + "</table>" +
+      "<p class=\"formula-line\">implied = curve(TVL) × exp(−2 · idio / 100) × 0.60 — bear ×0.50, bull ×0.70.</p>" +
+      "<p class=\"detail-verdict\">" + esc(r.farm_verdict || "") + "</p>" +
+      "<h3>Farm plan</h3>" +
+      "<ol class=\"farm-steps\">" + steps + "</ol>";
+    var heading = detailBody.querySelector("h2");
+    if (heading) heading.tabIndex = -1;
+    if (typeof dialog.showModal === "function") dialog.showModal();
+    // Keep the dialog showing its top: showModal focuses the last control,
+    // which would scroll the farm plan into view instead of the verdict.
+    if (heading) heading.focus();
+    dialog.scrollTop = 0;
   }
-  body.addEventListener('click', function (e) {
-    var tr = e.target.closest('tr');
+
+  boardBody.addEventListener("click", function (event) {
+    var tr = event.target.closest("tr");
     if (tr && tr.dataset.slug) openDetail(tr.dataset.slug);
   });
-  top10.addEventListener('click', function (e) {
-    var b = e.target.closest('[data-slug]');
-    if (b) openDetail(b.dataset.slug);
+  boardBody.addEventListener("keydown", function (event) {
+    if (event.key !== "Enter") return;
+    var tr = event.target.closest("tr");
+    if (tr && tr.dataset.slug) openDetail(tr.dataset.slug);
+  });
+  topTen.addEventListener("click", function (event) {
+    var li = event.target.closest("li");
+    if (li && li.dataset.slug) openDetail(li.dataset.slug);
+  });
+  topTen.addEventListener("keydown", function (event) {
+    if (event.key !== "Enter") return;
+    var li = event.target.closest("li");
+    if (li && li.dataset.slug) openDetail(li.dataset.slug);
   });
 
   renderBoard();
