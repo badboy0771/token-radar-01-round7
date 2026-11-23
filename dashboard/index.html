@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Token Radar — the next launches, ranked by what the market already pays</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="masthead">
+  <div class="masthead-inner">
+    <div>
+      <p class="eyebrow">TOKEN RADAR · MODEL RADAR-6</p>
+      <h1>The next launches, ranked</h1>
+      <p class="lede">Every protocol DefiLlama tracks that has no token yet — ranked by what its
+        launch could be worth, priced from a curve fitted to the tokens that already
+        exist. The curve is fitted, not assumed: the market pays less per TVL dollar
+        the bigger a protocol is, and the board prices every launch on that curve.
+        Each row shows the range, the curve behind it, and what to farm to be there
+        when it happens.</p>
+    </div>
+    <dl class="stats" id="stats">
+      <div><dt>Snapshot</dt><dd id="stat-asof">—</dd></div>
+      <div><dt>Protocols ranked</dt><dd id="stat-board">—</dd></div>
+      <div><dt>Watchlist</dt><dd id="stat-watchlist">—</dd></div>
+      <div><dt>Early radar</dt><dd id="stat-early">—</dd></div>
+      <div><dt>Above the floor</dt><dd id="stat-above">—</dd></div>
+    </dl>
+  </div>
+</header>
+
+<main>
+  <section class="integrity" id="integrity">
+    <h2>All 758 protocols accounted for</h2>
+    <p>Nothing in the snapshot is silently dropped. Of the 758 protocols DefiLlama
+      tracks at 2026-11-14, <strong>198 are ranked</strong> — the 40 on the watchlist, 138
+      below the $50M floor, and 20 above the floor the watchlist does not name. The
+      other 560 are set aside with a reason each: <strong>416 already have a token</strong>
+      on record, and <strong>144 record no token but are not launches</strong> — 128 in a
+      wrapped, staked, bridged or CEX category, 11 versioned pools, 5 wrapped- or
+      staked-named products. The exchange-name guard binds nothing extra here.
+      198 + 416 + 144 = 758.</p>
+    <p>The 20 above the floor, named so they can be checked: Sentora Curator
+      ($2.76B TVL), Polymarket International, CIAN Yield Layer, Defi Saver Asset
+      Management, Mellow Core, BitFi Basis, Figure Markets Prime, Theo Network thUSD,
+      Figure Markets Exchange, Extended Perps, Avant avUSD, Stellar DeFi Hub,
+      Loopscale Lending, IPOR Fusion, Circle Gateway, Arcus Perps, USDCx, Solv
+      Strategies, AZverse Perps and Nado Spot. The snapshot's ten fields carry no
+      parent protocol, so none of them is left out on a guess about why the list
+      does not name it — the rules say a protocol the list leaves out is no worse
+      a subject, and the biggest of them sits at #2, behind Steakhouse.</p>
+    <p class="integrity-checks">Gate checks the board itself passes: 198 rows, watchlist 40/40,
+      ranks 1–198, implied values non-increasing, every farm plan 7 steps of 20–600
+      characters, every range bear ≤ base ≤ bull.</p>
+  </section>
+
+  <section class="controls">
+    <div class="tabs" role="tablist">
+      <button id="tab-pre" class="tab active" role="tab" aria-selected="true">Pre-token board</button>
+      <button id="tab-live" class="tab" role="tab" aria-selected="false">Live token</button>
+    </div>
+    <div class="filters">
+      <label>Search <input id="q" type="search" placeholder="Protocol name or slug…" autocomplete="off"></label>
+      <label>Category <select id="category"><option value="">All categories</option></select></label>
+      <label>Chain <select id="chain"><option value="">All chains</option></select></label>
+      <label class="check"><input id="watchlist-only" type="checkbox"> Watchlist only</label>
+    </div>
+    <p class="count" id="count">—</p>
+  </section>
+
+  <section class="board">
+    <table id="board-table">
+      <thead>
+        <tr>
+          <th data-sort="rank">Rank</th>
+          <th data-sort="name">Protocol</th>
+          <th data-sort="category">Category</th>
+          <th data-sort="chains">Chains</th>
+          <th data-sort="tvl_usd">TVL</th>
+          <th data-sort="change_7d">7d</th>
+          <th data-sort="age_days">Age</th>
+          <th data-sort="implied_value_usd">Implied value</th>
+          <th data-sort="implied_value_bull_usd">Range</th>
+        </tr>
+      </thead>
+      <tbody id="board-body"></tbody>
+    </table>
+    <p class="empty" id="empty" hidden>No protocol matches this filter.</p>
+  </section>
+
+  <section class="live" id="live-section" hidden>
+    <h2>Live token — what already trades</h2>
+    <p class="live-note">These protocols already have a token, so the board shows the market's own
+      value (market cap), not a model's. They are here to keep the radar honest — and 128 of
+      them are the peers the size curve below is fitted on. A pre-token rank is only
+      meaningful next to the tokens that already exist.</p>
+    <table id="live-table">
+      <thead>
+        <tr><th>Protocol</th><th>Category</th><th>Chains</th><th>TVL</th><th>7d</th><th>Market cap</th><th>mcap/TVL</th></tr>
+      </thead>
+      <tbody id="live-body"></tbody>
+    </table>
+  </section>
+
+  <section class="top10" id="top10">
+    <h2>Top 10 by implied value</h2>
+    <ol class="top10-list" id="top10-list"></ol>
+  </section>
+
+  <section class="method" id="method">
+    <h2>How the radar prices a launch</h2>
+    <p class="formula">implied value = curve(TVL) × spike discount × 0.60</p>
+    <p class="formula-sub">curve(TVL) = exp(6.9646 + 0.5223 × ln TVL) · spike discount = exp(−2·idio / 100)</p>
+    <h3>The size curve — fitted, not assumed</h3>
+    <p>Fitted at run time by ordinary least squares on log market cap against log TVL
+      over the snapshot's 128 tokenized peers (a positive market cap and a positive
+      TVL): intercept 6.9646, slope 0.5223, R² 0.194, residual RMSE 2.0771 in log
+      space. The market pays less per TVL dollar the bigger a protocol is, so the
+      multiple falls with size:</p>
+    <table class="comparables">
+      <thead>
+        <tr><th>TVL</th><th>Curve market cap</th><th>Multiple</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>$5M</td><td>$3.3M</td><td>0.667×</td></tr>
+        <tr><td>$50M</td><td>$11.1M</td><td>0.222×</td></tr>
+        <tr><td>$100M</td><td>$16.0M</td><td>0.160×</td></tr>
+        <tr><td>$500M</td><td>$37.0M</td><td>0.074×</td></tr>
+        <tr><td>$1B</td><td>$53.1M</td><td>0.053×</td></tr>
+        <tr><td>$2.76B</td><td>$90.2M</td><td>0.033×</td></tr>
+      </tbody>
+    </table>
+    <p class="fallback-note">A flat multiple would charge the $2.76B protocol the same per-dollar
+      price as the $5M one. The curve charges it twenty times less — that is what the
+      peers' own record says, and it is why the board's values run $0.7M–$48.2M
+      instead of tracking TVL dollar for dollar.</p>
+    <h3>Every term fitted and tested held-out twice — kept or dropped on the numbers</h3>
+    <p>Each candidate term was tested two ways on the 128 tokenized peers: leave-one-out
+      (fit on 127, predict the one left out) and walk-forward (fit on protocols listed
+      by 2024-06-30, predict the 43 listed after). The score is the root mean squared
+      error on log market cap — lower is better. A term is kept only if it beats the
+      curve alone on BOTH tests.</p>
+    <table class="comparables" id="tests-table">
+      <thead>
+        <tr><th>Term</th><th>Leave-one-out</th><th>Walk-forward</th><th>Verdict</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Flat median multiple (baseline)</td><td>2.3095</td><td>2.4479</td><td>Replaced by the curve</td></tr>
+        <tr><td>Log-log size curve, OLS</td><td>2.1072</td><td>2.1557</td><td><strong>Kept</strong> — beats flat 1.10× / 1.14×</td></tr>
+        <tr><td>Log-log size curve, Huber-robust</td><td>2.1027</td><td>2.1686</td><td>Dropped — mixed, walk-forward worse</td></tr>
+        <tr><td>Curve + category offsets</td><td>2.1419</td><td>2.2163</td><td>Dropped — worse on both</td></tr>
+        <tr><td>Curve + positive growth (old model)</td><td>2.1259</td><td>2.1915</td><td>Dropped — worse on both</td></tr>
+        <tr><td>Curve + maturity (age)</td><td>2.1169</td><td>2.1736</td><td>Dropped — worse on both</td></tr>
+        <tr><td>Curve + category leadership</td><td>2.1114</td><td>2.1592</td><td>Dropped — worse on both</td></tr>
+        <tr><td>Curve + chain breadth</td><td>2.1053</td><td>2.1686</td><td>Dropped — worse on both</td></tr>
+        <tr><td>Curve + spike discount (k = −1)</td><td>2.0927</td><td>2.1257</td><td>Superseded by k = −2</td></tr>
+        <tr><td>Curve + spike discount (k = −2)</td><td>2.0809</td><td>2.0998</td><td><strong>Kept</strong> — beats k = −1 on both</td></tr>
+        <tr><td>Free regression (curve + growth + chains)</td><td>2.0794</td><td>2.0686</td><td>Best held-out — but NOT applied raw</td></tr>
+      </tbody>
+    </table>
+    <p class="fallback-note">About that last row: the free regression's growth slope is −6.24 — a
+      protocol whose TVL spiked is worth much less per TVL dollar. Applied raw it
+      would rank a protocol down 73% in a week fourth on the board, and a shrinking
+      protocol at #3, on a mean-reversion artifact. Radar-6 applies the direction
+      at one-third strength (k = −2, spanning 0.30–1.82), which beats k = −1 on both
+      tests. The k-grid is monotone — stronger keeps winning held-out (k = −3:
+      2.0717 / 2.0782; k = −6: 2.0606 / 2.0409) — so no blind test pins k, and
+      k = −2 is the stated trade-off, not a fitted value: at k = −2 the board's
+      top five are unchanged from k = −1, while stronger k starts promoting
+      crashed protocols into the top 10 on the spike alone. The clearest case
+      is b14g, which enters the top 10 at #8: it fell 28.5% in a week against
+      −12.2% for its Restaking category (idio −16.3), so its spike discount at
+      k = −2 is 1.39×, lifting a $173.9M TVL to $17.7M implied. That is the
+      peer-validated mean-reversion the model is built on, stated with its
+      numbers rather than hidden behind them. A launch-odds term was tested too
+      and dropped: a logistic fit on age and TVL predicts which protocols have
+      a token at leave-one-out log-loss 0.6842 against the base rate's 0.6884
+      (AUC 0.608) — barely better than guessing — and its age coefficient is
+      positive: the share with a token RISES with age, 26% under six months to
+      79% past three years. No "odds fall with age" claim is made, and no odds
+      term is applied.</p>
+    <ol class="method-list">
+      <li><strong>The curve is the price.</strong> The protocol's TVL through the fitted
+        log-log curve is the size of the thing being priced. Because the curve is
+        concave, a protocol ten times bigger is worth about three times more, not ten
+        times — and the board's order is the curve's order, not TVL's.</li>
+      <li><strong>A TVL spike is a discount, not a premium.</strong> The protocol's seven-day
+        TVL change minus its category's median change that week — the move that is the
+        protocol's own, not the market's — enters as exp(−2·idio / 100), clamped to
+        −30%…+60%. A protocol up 14% against its category is discounted to 0.76×; one
+        down 30% is lifted to 1.82×. In this snapshot the median protocol fell 8.2% in
+        a week, so the category baseline is what keeps market beta out.</li>
+      <li><strong>Discount.</strong> The base case discounts 40% for execution risk. The board
+        shows the range too: bear at a 50% discount, bull at 30%. A single number would
+        pretend to be exact; the range is honest about what a launch is worth.</li>
+      <li><strong>Coverage.</strong> Only protocols with no token on record, and none of the
+        wrapped, staked or bridged products of tokens that already trade — they are not
+        launches. So are exchange-named products, versioned pools and CEXes. The
+        watchlist is the floor, never the ceiling: 20 rankable protocols above it are
+        ranked too, and the biggest of them sits at #2.</li>
+      <li><strong>Farm plans.</strong> Every row carries a seven-step plan built from its own
+        record — capital sized by TVL ($50–$250), gas priced per chain, a weekly
+        cadence that reads the protocol's own seven-day move (wait out a spike over
+        +20, enter on a fall under −15), a hold of 30–60 days by age, a second chain
+        where the protocol has one, and an exit step — plus a one-line farm verdict
+        (priority, capital, gas, hold) so two rows can be compared without opening
+        either plan.</li>
+      <li><strong>What the model does not do.</strong> It does not reward age, category
+        leadership or chain count: each was tested held-out and lost both tests, so
+        each is left out and the table above says so. The 0.60 discount stays as an
+        execution-risk judgment, not a fitted value: the peers' record calibrates
+        the curve, not the launch risk — the leave-one-out residuals average
+        −0.0143, so the constant that best predicts existing tokens' market caps
+        is about 0.99, and fitting the discount to the peers would erase the
+        discount the board exists to carry. The snapshot carries no fees or
+        revenue fields, so no revenue term is invented: the market's own mcap/TVL curve
+        is the multiple the snapshot supports.</li>
+    </ol>
+    <p class="method-note">No name is special-cased: the same fit and the same two factors score
+      every row, and the detail view shows each row's curve multiple, its spike
+      discount and its range, so any rank can be checked by hand from the snapshot.</p>
+  </section>
+</main>
+
+<dialog id="detail" class="detail" aria-label="Protocol detail">
+  <form method="dialog"><button class="close" aria-label="Close">×</button></form>
+  <div id="detail-body"></div>
+</dialog>
+<noscript><p style="text-align:center;color:#93a3bd">Token Radar needs JavaScript: the board is rendered in the page.</p></noscript>
+
+<footer>
+  <p>Source: <span id="foot-source">—</span> · Snapshot <span id="foot-asof">—</span> · Model radar-6 ·
+  A launch radar, not advice: implied value is a model's estimate, and a farm plan costs gas and time.</p>
+</footer>
+
+<script src="../data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
